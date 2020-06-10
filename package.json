@@ -1,0 +1,55 @@
+{
+  "name": "webgl2d",
+  "version": "0.0.1",
+  "description": "Create CanvasRenderingContext2D from WebGLRenderingContext",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "node-ts-scripts": "^0.12.4"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/heineiuo/webgl2d.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/heineiuo/webgl2d/issues"
+  },
+  "homepage": "https://github.com/heineiuo/webgl2d#readme",
+  "prettier": {
+    "parser": "typescript",
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": false,
+    "singleQuote": true
+  },
+  "eslintConfig": {
+    "env": {
+      "browser": true,
+      "es6": true
+    },
+    "extends": [
+      "plugin:@typescript-eslint/recommended",
+      "prettier",
+      "prettier/@typescript-eslint"
+    ],
+    "globals": {
+      "Atomics": "readonly",
+      "SharedArrayBuffer": "readonly"
+    },
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": 2018,
+      "sourceType": "module"
+    },
+    "plugins": [
+      "@typescript-eslint/eslint-plugin"
+    ],
+    "rules": {}
+  }
+}
