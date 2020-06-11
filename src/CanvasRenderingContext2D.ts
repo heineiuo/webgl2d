@@ -1,18 +1,41 @@
 import { InternalState } from './InternalState'
 import { Transformer } from './Transformer'
 import {
+  Vector4,
   getFragmentShaderSource,
   getVertexShaderSource,
   SubPath,
+  colorStringToVec4,
 } from './Utils'
 import { ShaderProgram } from './ShaderProgram'
 
 export class CanvasRenderingContext2DImplemention
   implements CanvasRenderingContext2D {
-  constructor(webgl: WebGLRenderingContext) {
-    this.internalState = new InternalState(webgl)
-    this.transformer = new Transformer([1])
-    this.gl = webgl
+  constructor(gl: WebGLRenderingContext) {
+    this.internalState = new InternalState(gl)
+    this.transformer = new Transformer()
+    this.gl = gl
+    this.getShaderProgram()
+    this.initBuffers()
+
+    gl.viewport(0, 0, 800, 600)
+
+    // Default white background
+    gl.clearColor(1, 1, 1, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT) // | gl.DEPTH_BUFFER_BIT);
+
+    // Disables writing to dest-alpha
+    gl.colorMask(true, true, true, false)
+
+    // Depth options
+    //gl.enable(gl.DEPTH_TEST);
+    //gl.depthFunc(gl.LEQUAL);
+
+    // Blending options
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+    this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE)
   }
 
   private gl: WebGLRenderingContext
@@ -20,17 +43,43 @@ export class CanvasRenderingContext2DImplemention
   private transformer: Transformer
   private pathVertexPositionBuffer: WebGLBuffer
   private rectVertexPositionBuffer: WebGLBuffer
+  private rectVertexColorBuffer: WebGLBuffer
+  private pathVertexColorBuffer: WebGLBuffer
   private shaderPool = []
   private subPaths = []
   private shaderProgram!: WebGLProgram
   private imageCache = []
   private textureCache = []
+  private maxTextureSize: any
+  private fillStyleToVector4 = (
+    color: string | CanvasGradient | CanvasPattern
+  ): Vector4 => {
+    if (typeof color !== 'string') throw new Error('Only support string')
+    const result = colorStringToVec4(color)
+    if (result) return result
+    return [0, 0, 0, 0]
+  }
+
+  rectVerts = new Float32Array([0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0])
+
+  private initBuffers = (): void => {
+    const gl = this.gl
+    this.rectVertexPositionBuffer = gl.createBuffer()
+    this.rectVertexColorBuffer = gl.createBuffer()
+
+    this.pathVertexPositionBuffer = gl.createBuffer()
+    this.pathVertexColorBuffer = gl.createBuffer()
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.rectVertexPositionBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, this.rectVerts, gl.STATIC_DRAW)
+  }
 
   private sendTransformStack(sp: ShaderProgram): void {
-    const stack = this.transformer.matStack
-    for (let i = 0, maxI = this.transformer.cStack + 1; i < maxI; ++i) {
-      console.log([sp.uTransforms[i], false, stack[maxI - 1 - i]])
-      this.gl.uniformMatrix3fv(sp.uTransforms[i], false, stack[maxI - 1 - i])
+    const matStack = this.transformer.matStack
+    const maxIndex = this.transformer.cStack
+    for (let i = 0; i <= maxIndex; i++) {
+      // console.log(matStack[maxIndex - i])
+      this.gl.uniformMatrix3fv(sp.uTransforms[i], false, matStack[maxIndex - i])
     }
   }
 
@@ -140,8 +189,11 @@ export class CanvasRenderingContext2DImplemention
 
     this.sendTransformStack(shaderProgram)
 
-    const fillStyle = this.internalState.fillStrokeStyles.fillStyle
+    const fillStyle = this.fillStyleToVector4(
+      this.internalState.fillStrokeStyles.fillStyle
+    )
 
+    console.log({ fillStyle })
     this.gl.uniform4f(
       shaderProgram.uColor,
       fillStyle[0],
@@ -227,7 +279,12 @@ export class CanvasRenderingContext2DImplemention
   }
 
   set fillStyle(value) {
-    this.internalState.fillStrokeStyles.fillStyle = value
+    if (typeof value === 'string') {
+      const parsedValue = colorStringToVec4(value)
+      if (parsedValue) {
+        this.internalState.fillStrokeStyles.fillStyle = value
+      }
+    }
   }
 
   get strokeStyle(): string | CanvasGradient | CanvasPattern {
@@ -267,7 +324,7 @@ export class CanvasRenderingContext2DImplemention
   }
 
   set lineWidth(value) {
-    // this.gl.$lineWidth(value)
+    this.gl.lineWidth(value)
     this.internalState.drawingStyles.lineWidth = value
   }
 
@@ -548,7 +605,9 @@ export class CanvasRenderingContext2DImplemention
     sw: number,
     sh: number
   ): ImageData => {
-    throw new Error('getImageData not implemented')
+    console.warn('getImageData not implemented')
+
+    return {} as ImageData
 
     // let data = this.tempCtx.createImageData(width, height);
     // let buffer = new Uint8Array(width * height * 4);
@@ -570,7 +629,14 @@ export class CanvasRenderingContext2DImplemention
     this.drawImage(imageData, x, y)
   }
 
-  transform = (m11, m12, m21, m22, dx, dy): void => {
+  transform = (
+    m11: number,
+    m12: number,
+    m21: number,
+    m22: number,
+    dx: number,
+    dy: number
+  ): void => {
     const m = this.transformer.matStack[this.transformer.cStack]
 
     m[0] *= m11
@@ -599,7 +665,7 @@ export class CanvasRenderingContext2DImplemention
     const gl = this.gl
     const transformer = this.transformer
     const shaderProgram = this.getShaderProgram(transformer.cStack + 2, 0)
-    console.log({ shaderProgram })
+    // console.log({ shaderProgram })
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.rectVertexPositionBuffer)
     gl.vertexAttribPointer(
@@ -617,7 +683,11 @@ export class CanvasRenderingContext2DImplemention
     transformer.scale(width, height)
 
     this.sendTransformStack(shaderProgram)
-    const fillStyle = this.internalState.fillStrokeStyles.fillStyle
+    const fillStyle = colorStringToVec4(
+      this.internalState.fillStrokeStyles.fillStyle
+    )
+
+    console.log({ fillStyle })
 
     gl.uniform4f(
       shaderProgram.uColor,

@@ -5,10 +5,16 @@
   "main": "index.js",
   "dependencies": {},
   "devDependencies": {
-    "node-ts-scripts": "^0.12.4"
+    "@types/react": "^16.9.36",
+    "@types/react-dom": "^16.9.8",
+    "@types/react-router-dom": "^5.1.5",
+    "node-ts-scripts": "^0.12.4",
+    "react": "^16.13.1",
+    "react-dom": "^16.13.1",
+    "react-router-dom": "^5.2.0"
   },
   "scripts": {
-    "demo": "node-ts-scripts run src/demo/index.ts --platform=browser",
+    "demo": "node-ts-scripts run src/demo/index.tsx --platform=browser",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -52,5 +58,21 @@
       "@typescript-eslint/eslint-plugin"
     ],
     "rules": {}
+  },
+  "importmap": {
+    "imports": {
+      "react": {
+        "development": "https://cdn.jsdelivr.net/npm/react@16.13.1/umd/react.development.js",
+        "production": "https://cdn.jsdelivr.net/npm/react@16.13.1/umd/react.production.min.js"
+      },
+      "react-dom": {
+        "development": "https://cdn.jsdelivr.net/npm/react-dom@16.13.1/umd/react-dom.development.js",
+        "production": "https://cdn.jsdelivr.net/npm/react-dom@16.13.1/umd/react-dom.production.min.js"
+      },
+      "react-router-dom": {
+        "development": "https://cdn.jsdelivr.net/npm/react-router-dom@5.1.2/umd/react-router-dom.js",
+        "production": "https://cdn.jsdelivr.net/npm/react-router-dom@5.1.2/umd/react-router-dom.min.js"
+      }
+    }
   }
 }

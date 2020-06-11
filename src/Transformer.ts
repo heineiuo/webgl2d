@@ -51,7 +51,7 @@ export class Transformer {
     return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
   }
 
-  constructor(mat: number[]) {
+  constructor(mat?: number[]) {
     this.clearStack(mat)
   }
 
@@ -61,7 +61,7 @@ export class Transformer {
   valid: number
   result: number[]
 
-  clearStack(initMat: number[]): void {
+  clearStack(initMat?: number[]): void {
     this.matStack = []
     this.matCache = []
     this.cStack = 0
@@ -72,7 +72,7 @@ export class Transformer {
       this.matStack[i] = Transformer.getIdentity()
     }
 
-    if (initMat !== undefined) {
+    if (!!initMat) {
       this.matStack[0] = initMat
     } else {
       this.setIdentity()

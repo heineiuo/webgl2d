@@ -142,6 +142,141 @@ export const colors = {
   yellowgreen: '#9acd32',
 }
 
+export type Vector4 = [number, number, number, number]
+
+const reRGBAColor = /^rgb(a)?\(\s*(-?[\d]+)(%)?\s*,\s*(-?[\d]+)(%)?\s*,\s*(-?[\d]+)(%)?\s*,?\s*(-?[\d\.]+)?\s*\)$/
+const reHSLAColor = /^hsl(a)?\(\s*(-?[\d\.]+)\s*,\s*(-?[\d\.]+)%\s*,\s*(-?[\d\.]+)%\s*,?\s*(-?[\d\.]+)?\s*\)$/
+const reHex6Color = /^#([0-9A-Fa-f]{6})$/
+const reHex3Color = /^#([0-9A-Fa-f])([0-9A-Fa-f])([0-9A-Fa-f])$/
+
+function HSLAToRGBA(
+  h: number,
+  s: number,
+  l: number,
+  a: number
+): [number, number, number, number] {
+  // Clamp and Normalize values
+  h = (((h % 360) + 360) % 360) / 360
+  s = s > 100 ? 1 : s / 100
+  s = s < 0 ? 0 : s
+  l = l > 100 ? 1 : l / 100
+  l = l < 0 ? 0 : l
+
+  const m2 = l <= 0.5 ? l * (s + 1) : l + s - l * s
+  const m1 = l * 2 - m2
+
+  function getHue(value: number): number {
+    let hue: number
+
+    if (value * 6 < 1) {
+      hue = m1 + (m2 - m1) * value * 6
+    } else if (value * 2 < 1) {
+      hue = m2
+    } else if (value * 3 < 2) {
+      hue = m1 + (m2 - m1) * (2 / 3 - value) * 6
+    } else {
+      hue = m1
+    }
+
+    return hue
+  }
+
+  const r = getHue(h + 1 / 3)
+  const g = getHue(h)
+  const b = getHue(h - 1 / 3)
+
+  return [r, g, b, a]
+}
+
+export function colorStringToVec4(value: string): Vector4 | false {
+  let result = []
+  let match = reRGBAColor.exec(value)
+
+  if (match) {
+    const hasAlpha = match[1]
+    const alphaChannel = parseFloat(match[8])
+
+    if (
+      (hasAlpha && isNaN(alphaChannel)) ||
+      (!hasAlpha && !isNaN(alphaChannel))
+    ) {
+      return false
+    }
+
+    const sameType = match[3]
+
+    for (let i = 2; i < 8; i += 2) {
+      let channel = parseFloat(match[i])
+      const isPercent = match[i + 1]
+
+      if (isPercent !== sameType) {
+        return false
+      }
+
+      // Clamp and normalize values
+      if (isPercent) {
+        channel = channel > 100 ? 1 : channel / 100
+        channel = channel < 0 ? 0 : channel
+      } else {
+        channel = channel > 255 ? 1 : channel / 255
+        channel = channel < 0 ? 0 : channel
+      }
+
+      result.push(channel)
+    }
+
+    result.push(hasAlpha ? alphaChannel : 1.0)
+
+    return result
+  }
+
+  match = reHSLAColor.exec(value)
+
+  if (match) {
+    const hasAlpha = !!match[1]
+    const alphaChannel = parseFloat(match[5])
+    result = HSLAToRGBA(
+      parseInt(match[2]),
+      parseInt(match[3]),
+      parseInt(match[4]),
+      parseFloat(String(hasAlpha && alphaChannel ? alphaChannel : 1.0))
+    )
+    return result
+  }
+
+  match = reHex6Color.exec(value)
+
+  if (match) {
+    const colorInt = parseInt(match[1], 16)
+    result = [
+      ((colorInt & 0xff0000) >> 16) / 255,
+      ((colorInt & 0x00ff00) >> 8) / 255,
+      (colorInt & 0x0000ff) / 255,
+      1.0,
+    ]
+
+    return result
+  }
+  match = reHex3Color.exec(value)
+
+  if (match) {
+    const hexString =
+      '#' +
+      [match[1], match[1], match[2], match[2], match[3], match[3]].join('')
+    return colorStringToVec4(hexString)
+  }
+  if (value.toLowerCase() in colors) {
+    return colorStringToVec4(colors[value.toLowerCase()])
+  }
+
+  if (value.toLowerCase() === 'transparent') {
+    return [0, 0, 0, 0]
+  }
+
+  // Color keywords not yet implemented, ie "orange", return hot pink
+  return false
+}
+
 export function colorVecToString(vec4: Vector4): string {
   return (
     'rgba(' +
