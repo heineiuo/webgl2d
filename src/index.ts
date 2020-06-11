@@ -1,7 +1,7 @@
-import { RenderingContext2D } from "./RenderingContext2D";
+import { CanvasRenderingContext2DImplemention } from './CanvasRenderingContext2D'
 
 export function webgl2d(
   webgl: WebGLRenderingContext
 ): CanvasRenderingContext2D {
-  return new RenderingContext2D(webgl);
+  return new CanvasRenderingContext2DImplemention(webgl)
 }
