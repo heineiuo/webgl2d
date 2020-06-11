@@ -9,6 +9,9 @@ class DemoLoader {
     const webgl = canvas.getContext('webgl')
     const ctx = webgl2d(webgl)
     console.log(ctx)
+
+    ctx.fillStyle = 'blue'
+    ctx.fillRect(10, 10, 100, 100)
   }
 }
 

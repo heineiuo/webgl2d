@@ -155,3 +155,103 @@ export function colorVecToString(vec4: Vector4): string {
     ')'
   )
 }
+
+const shaderMask = {
+  texture: 1,
+  crop: 2,
+  path: 4,
+}
+export function getFragmentShaderSource(sMask: number): string {
+  const fsSource = [
+    '#ifdef GL_ES',
+    'precision highp float;',
+    '#endif',
+
+    '#define hasTexture ' + (sMask & shaderMask.texture ? '1' : '0'),
+    '#define hasCrop ' + (sMask & shaderMask.crop ? '1' : '0'),
+
+    'varying vec4 vColor;',
+
+    '#if hasTexture',
+    'varying vec2 vTextureCoord;',
+    'uniform sampler2D uSampler;',
+    '#if hasCrop',
+    'uniform vec4 uCropSource;',
+    '#endif',
+    '#endif',
+
+    'void main(void) {',
+    '#if hasTexture',
+    '#if hasCrop',
+    'gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.x * uCropSource.z, vTextureCoord.y * uCropSource.w) + uCropSource.xy);',
+    '#else',
+    'gl_FragColor = texture2D(uSampler, vTextureCoord);',
+    '#endif',
+    '#else',
+    'gl_FragColor = vColor;',
+    '#endif',
+    '}',
+  ].join('\n')
+
+  return fsSource
+}
+
+export function getVertexShaderSource(
+  stackDepth: number,
+  sMask: number,
+  canvasWidth: number,
+  canvasHeight: number
+): string {
+  const w = 2 / canvasWidth
+  const h = -2 / canvasHeight
+
+  stackDepth = stackDepth || 1
+
+  const vsSource = [
+    '#define hasTexture ' + (sMask & shaderMask.texture ? '1' : '0'),
+    'attribute vec4 aVertexPosition;',
+
+    '#if hasTexture',
+    'varying vec2 vTextureCoord;',
+    '#endif',
+
+    'uniform vec4 uColor;',
+    'uniform mat3 uTransforms[' + stackDepth + '];',
+
+    'varying vec4 vColor;',
+
+    'const mat4 pMatrix = mat4(' +
+      w +
+      ',0,0,0, 0,' +
+      h +
+      ',0,0, 0,0,1.0,1.0, -1.0,1.0,0,0);',
+
+    'mat3 crunchStack(void) {',
+    'mat3 result = uTransforms[0];',
+    'for (int i = 1; i < ' + stackDepth + '; ++i) {',
+    'result = uTransforms[i] * result;',
+    '}',
+    'return result;',
+    '}',
+
+    'void main(void) {',
+    'vec3 position = crunchStack() * vec3(aVertexPosition.x, aVertexPosition.y, 1.0);',
+    'gl_Position = pMatrix * vec4(position, 1.0);',
+    'vColor = uColor;',
+    '#if hasTexture',
+    'vTextureCoord = aVertexPosition.zw;',
+    '#endif',
+    '}',
+  ].join('\n')
+  return vsSource
+}
+
+export class SubPath {
+  constructor(x: number, y: number) {
+    this.closed = false
+    this.verts = [x, y, 0, 0]
+  }
+
+  closed: boolean
+  verts: [number, number, number, number]
+}

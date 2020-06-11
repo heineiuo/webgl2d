@@ -1,12 +1,35 @@
-type DrawingState = {}
+type InternalStateSnapshot = {
+  compositing: CanvasCompositing
+  drawingStyles: Omit<CanvasPathDrawingStyles, 'getLineDash' | 'setLineDash'>
+  imageSmoothing: CanvasImageSmoothing
+  fillStrokeStyles: Omit<
+    CanvasFillStrokeStyles,
+    'createLinearGradient' | 'createPattern' | 'createRadialGradient'
+  >
+  filter: string
+  shadowStyles: CanvasShadowStyles
+  textDrawingStyles: CanvasTextDrawingStyles
+}
 
 export class InternalState {
-  constructor(webgl: WebGLRenderingContext) {
+  constructor(
+    webgl: WebGLRenderingContext,
+    options: {
+      width?: number
+      height?: number
+    } = {}
+  ) {
     this.webgl = webgl
-    this.drawStateStack = []
+    if (options.width) this.canvasWidth = options.width
+    if (options.height) this.canvasHeight = options.height
   }
+
   webgl: WebGLRenderingContext
-  drawStateStack: DrawingState[]
+  canvasWidth = 800
+  canvasHeight = 600
+  stateStack: InternalStateSnapshot[] = []
+
+  // state ----------
 
   compositing: CanvasCompositing = {
     globalAlpha: 1,
@@ -51,5 +74,54 @@ export class InternalState {
     font: '10px sans-serif',
     textAlign: 'start',
     textBaseline: 'alphabetic',
+  }
+
+  save(): void {
+    this.stateStack.push({
+      compositing: {
+        globalAlpha: this.compositing.globalAlpha,
+        globalCompositeOperation: this.compositing.globalCompositeOperation,
+      },
+      drawingStyles: {
+        lineCap: this.drawingStyles.lineCap,
+        lineJoin: this.drawingStyles.lineJoin,
+        lineDashOffset: this.drawingStyles.lineDashOffset,
+        lineWidth: this.drawingStyles.lineWidth,
+        miterLimit: this.drawingStyles.miterLimit,
+      },
+      fillStrokeStyles: {
+        fillStyle: this.fillStrokeStyles.fillStyle,
+        strokeStyle: this.fillStrokeStyles.strokeStyle,
+      },
+      imageSmoothing: {
+        imageSmoothingEnabled: this.imageSmoothing.imageSmoothingEnabled,
+        imageSmoothingQuality: this.imageSmoothing.imageSmoothingQuality,
+      },
+      filter: this.filter,
+      shadowStyles: {
+        shadowBlur: this.shadowStyles.shadowBlur,
+        shadowColor: this.shadowStyles.shadowColor,
+        shadowOffsetX: this.shadowStyles.shadowOffsetX,
+        shadowOffsetY: this.shadowStyles.shadowOffsetY,
+      },
+      textDrawingStyles: {
+        direction: this.textDrawingStyles.direction,
+        font: this.textDrawingStyles.font,
+        textAlign: this.textDrawingStyles.textAlign,
+        textBaseline: this.textDrawingStyles.textBaseline,
+      },
+    })
+  }
+  restore(): void {
+    if (this.stateStack.length > 0) {
+      const snapshot = this.stateStack.pop()
+      this.compositing = snapshot.compositing
+      this.drawingStyles = snapshot.drawingStyles
+      this.imageSmoothing = snapshot.imageSmoothing
+      this.fillStrokeStyles = snapshot.fillStrokeStyles
+      this.filter = snapshot.filter
+      this.shadowStyles = snapshot.shadowStyles
+      this.textDrawingStyles = snapshot.textDrawingStyles
+    }
   }
 }

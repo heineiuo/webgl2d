@@ -1,30 +1,124 @@
 import { InternalState } from './InternalState'
+import { Transformer } from './Transformer'
+import {
+  getFragmentShaderSource,
+  getVertexShaderSource,
+  SubPath,
+} from './Utils'
+import { ShaderProgram } from './ShaderProgram'
 
 export class CanvasRenderingContext2DImplemention
   implements CanvasRenderingContext2D {
   constructor(webgl: WebGLRenderingContext) {
     this.internalState = new InternalState(webgl)
+    this.transformer = new Transformer([1])
     this.gl = webgl
   }
 
   private gl: WebGLRenderingContext
   private internalState: InternalState
+  private transformer: Transformer
+  private pathVertexPositionBuffer: WebGLBuffer
+  private rectVertexPositionBuffer: WebGLBuffer
+  private shaderPool = []
+  private subPaths = []
+  private shaderProgram!: WebGLProgram
+  private imageCache = []
+  private textureCache = []
 
-  private sendTransformStack(sp) {
-    let stack = this.transform.m_stack
-    for (let i = 0, maxI = this.transform.c_stack + 1; i < maxI; ++i) {
+  private sendTransformStack(sp: ShaderProgram): void {
+    const stack = this.transformer.matStack
+    for (let i = 0, maxI = this.transformer.cStack + 1; i < maxI; ++i) {
+      console.log([sp.uTransforms[i], false, stack[maxI - 1 - i]])
       this.gl.uniformMatrix3fv(sp.uTransforms[i], false, stack[maxI - 1 - i])
     }
   }
 
-  private subPaths = []
+  private getShaderProgram = (
+    transformStackDepth = 1,
+    sMask = 0
+  ): ShaderProgram => {
+    const gl = this.gl
+    const storedShader = this.shaderPool[transformStackDepth]
+      ? this.shaderPool[transformStackDepth][sMask]
+      : null
+    if (storedShader) {
+      gl.useProgram(storedShader)
+      this.shaderProgram = storedShader
+      return storedShader
+    }
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)
 
-  private fillSubPath(index) {
-    let transform = this.transform
-    let shaderProgram = this.initShaders(transform.c_stack + 2, 0)
+    gl.shaderSource(fragmentShader, getFragmentShaderSource(sMask))
+    gl.compileShader(fragmentShader)
 
-    let subPath = this.subPaths[index]
-    let verts = subPath.verts
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      throw new Error(
+        'fragment shader error: ' + gl.getShaderInfoLog(fragmentShader)
+      )
+    }
+
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER)
+    gl.shaderSource(
+      vertexShader,
+      getVertexShaderSource(
+        transformStackDepth,
+        sMask,
+        this.internalState.canvasWidth,
+        this.internalState.canvasHeight
+      )
+    )
+    gl.compileShader(vertexShader)
+
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      throw 'vertex shader error: ' + gl.getShaderInfoLog(vertexShader)
+    }
+
+    const shaderProgram: ShaderProgram = gl.createProgram()
+    shaderProgram.stackDepth = transformStackDepth
+    gl.attachShader(shaderProgram, fragmentShader)
+    gl.attachShader(shaderProgram, vertexShader)
+    gl.linkProgram(shaderProgram)
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+      throw 'Could not initialise shaders.'
+    }
+
+    gl.useProgram(shaderProgram)
+
+    shaderProgram.vertexPositionAttribute = gl.getAttribLocation(
+      shaderProgram,
+      'aVertexPosition'
+    )
+    gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute)
+
+    shaderProgram.uColor = gl.getUniformLocation(shaderProgram, 'uColor')
+    shaderProgram.uSampler = gl.getUniformLocation(shaderProgram, 'uSampler')
+    shaderProgram.uCropSource = gl.getUniformLocation(
+      shaderProgram,
+      'uCropSource'
+    )
+
+    shaderProgram.uTransforms = []
+    for (let i = 0; i < transformStackDepth; ++i) {
+      shaderProgram.uTransforms[i] = gl.getUniformLocation(
+        shaderProgram,
+        'uTransforms[' + i + ']'
+      )
+    }
+    if (!this.shaderPool[transformStackDepth]) {
+      this.shaderPool[transformStackDepth] = []
+    }
+    this.shaderPool[transformStackDepth][sMask] = shaderProgram
+    return shaderProgram
+  }
+
+  private fillSubPath(index: number): void {
+    const transform = this.transformer
+    const shaderProgram = this.getShaderProgram(transform.cStack + 2, 0)
+
+    const subPath = this.subPaths[index]
+    const verts = subPath.verts
 
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.pathVertexPositionBuffer)
     this.gl.bufferData(
@@ -46,12 +140,14 @@ export class CanvasRenderingContext2DImplemention
 
     this.sendTransformStack(shaderProgram)
 
+    const fillStyle = this.internalState.fillStrokeStyles.fillStyle
+
     this.gl.uniform4f(
       shaderProgram.uColor,
-      this.drawState.fillStyle[0],
-      this.drawState.fillStyle[1],
-      this.drawState.fillStyle[2],
-      this.drawState.fillStyle[3]
+      fillStyle[0],
+      fillStyle[1],
+      fillStyle[2],
+      fillStyle[3]
     )
 
     this.gl.drawArrays(this.gl.TRIANGLE_FAN, 0, verts.length / 4)
@@ -59,12 +155,12 @@ export class CanvasRenderingContext2DImplemention
     transform.popMatrix()
   }
 
-  private strokeSubPath(index) {
-    let transform = this.transform
-    let shaderProgram = this.initShaders(transform.c_stack + 2, 0)
+  private strokeSubPath(index: number): void {
+    const transformer = this.transformer
+    const shaderProgram = this.getShaderProgram(transformer.cStack + 2, 0)
 
-    let subPath = this.subPaths[index]
-    let verts = subPath.verts
+    const subPath = this.subPaths[index]
+    const verts = subPath.verts
 
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.pathVertexPositionBuffer)
     this.gl.bufferData(
@@ -82,16 +178,17 @@ export class CanvasRenderingContext2DImplemention
       0
     )
 
-    transform.pushMatrix()
+    transformer.pushMatrix()
 
     this.sendTransformStack(shaderProgram)
+    const strokeStyle = this.internalState.fillStrokeStyles.strokeStyle
 
     this.gl.uniform4f(
       shaderProgram.uColor,
-      this.drawState.strokeStyle[0],
-      this.drawState.strokeStyle[1],
-      this.drawState.strokeStyle[2],
-      this.drawState.strokeStyle[3]
+      strokeStyle[0],
+      strokeStyle[1],
+      strokeStyle[2],
+      strokeStyle[3]
     )
 
     if (subPath.closed) {
@@ -100,11 +197,8 @@ export class CanvasRenderingContext2DImplemention
       this.gl.drawArrays(this.gl.LINE_STRIP, 0, verts.length / 4)
     }
 
-    transform.popMatrix()
+    transformer.popMatrix()
   }
-
-  private imageCache = []
-  private textureCache = []
 
   // ------------------ END OF PRIVATE METHODS --------------------------------------
 
@@ -275,6 +369,7 @@ export class CanvasRenderingContext2DImplemention
   }
 
   isPointInStroke = (arg1: any, arg2: any, arg3?: any, arg4?: any): boolean => {
+    console.warn('isPointInStroke not implemented')
     return false
   }
 
@@ -287,9 +382,12 @@ export class CanvasRenderingContext2DImplemention
     startAngle: number,
     endAngle: number,
     anticlockwise?: boolean
-  ): void => {}
+  ): void => {
+    console.warn('ellipse not implemented')
+  }
 
   getLineDash = (): number[] => {
+    console.warn('getLineDash not implemented')
     return []
   }
 
@@ -303,14 +401,17 @@ export class CanvasRenderingContext2DImplemention
     dy?: number,
     dw?: number,
     dh?: number
-  ): void => {}
+  ): void => {
+    console.warn('drawImage not implemented')
+  }
 
   // Empty the list of subpaths so that the context once again has zero subpaths
   beginPath = (): void => {
-    this.subPaths.length = 0
+    this.subPaths = []
   }
 
   clip = (arg1?: any, arg2?: any): void => {
+    console.warn('clip not implemented')
     return
   }
 
@@ -320,7 +421,10 @@ export class CanvasRenderingContext2DImplemention
     }
   }
 
-  isPointInPath = (path: any, x: any, y?: any, fillRule?: any): boolean => {}
+  isPointInPath = (path: any, x: any, y?: any, fillRule?: any): boolean => {
+    console.warn('isPointInPath not implemented')
+    return false
+  }
 
   stroke = (path?: Path2D): void => {
     for (let i = 0; i < this.subPaths.length; i++) {
@@ -332,11 +436,13 @@ export class CanvasRenderingContext2DImplemention
   }
 
   setLineDash = (segments: number[]): void => {
+    console.warn('setLineDash not implemented')
     return
   }
 
   getTransform = (): DOMMatrix => {
-    return {}
+    console.warn('getTransform not implemented')
+    return {} as DOMMatrix
   }
 
   resetTransform = (): void => {
@@ -344,10 +450,12 @@ export class CanvasRenderingContext2DImplemention
   }
 
   drawFocusIfNeeded = (arg1: any, arg2?: any): void => {
+    console.warn('drawFocusIfNeeded not implemented')
     return
   }
 
   scrollPathIntoView = (path?: Path2D): void => {
+    console.warn('scrollPathIntoView not implemented')
     return
   }
 
@@ -356,12 +464,18 @@ export class CanvasRenderingContext2DImplemention
     y0: number,
     x1: number,
     y1: number
-  ): CanvasGradient => {}
+  ): CanvasGradient => {
+    console.warn('createLinearGradient not implemented')
+    return {} as CanvasGradient
+  }
 
   createPattern = (
     image: CanvasImageSource,
     repetition: string
-  ): CanvasPattern | null => {}
+  ): CanvasPattern | null => {
+    console.warn('createLinearGradient not implemented')
+    return
+  }
 
   createRadialGradient = (
     x0: number,
@@ -370,7 +484,10 @@ export class CanvasRenderingContext2DImplemention
     x1: number,
     y1: number,
     r1: number
-  ): CanvasGradient => {}
+  ): CanvasGradient => {
+    console.warn('createLinearGradient not implemented')
+    return {} as CanvasGradient
+  }
 
   // Need a solution for drawing text that isnt stupid slow
   fillText = (text: string, x: number, y: number, maxWidth?: number): void => {
@@ -388,32 +505,35 @@ export class CanvasRenderingContext2DImplemention
     x: number,
     y: number,
     maxWidth?: number
-  ): void => {}
+  ): void => {
+    console.warn('strokeText not implemented')
+  }
 
   measureText = (text: string): TextMetrics => {
-    return {}
+    console.warn('measureText not implemented')
+    return {} as TextMetrics
   }
 
   save = (): void => {
-    this.transform.pushMatrix()
-    this.saveDrawState()
+    this.transformer.pushMatrix()
+    this.internalState.save()
   }
 
   restore = (): void => {
-    this.transform.popMatrix()
-    this.restoreDrawState()
+    this.transformer.popMatrix()
+    this.internalState.restore()
   }
 
   translate = (x: number, y: number): void => {
-    this.transform.translate(x, y)
+    this.transformer.translate(x, y)
   }
 
   rotate = (angle: number): void => {
-    this.transform.rotate(angle)
+    this.transformer.rotate(angle)
   }
 
   scale = (x: number, y: number): void => {
-    this.transform.scale(x, y)
+    this.transformer.scale(x, y)
   }
 
   createImageData = (arg1: any, arg2?: any): ImageData => {
@@ -451,7 +571,7 @@ export class CanvasRenderingContext2DImplemention
   }
 
   transform = (m11, m12, m21, m22, dx, dy): void => {
-    let m = this.transform.m_stack[this.transform.c_stack]
+    const m = this.transformer.matStack[this.transformer.cStack]
 
     m[0] *= m11
     m[1] *= m21
@@ -471,14 +591,15 @@ export class CanvasRenderingContext2DImplemention
     e?: any,
     f?: any
   ): void => {
-    this.transform.setIdentity()
-    this.gl.transform.apply(this, arguments)
+    this.transformer.setIdentity()
+    this.transform(a, b, c, d, e, f)
   }
 
-  fillRect = (x, y, width, height): void => {
+  fillRect = (x: number, y: number, width: number, height: number): void => {
     const gl = this.gl
-    let transform = this.transform
-    let shaderProgram = this.initShaders(transform.c_stack + 2, 0)
+    const transformer = this.transformer
+    const shaderProgram = this.getShaderProgram(transformer.cStack + 2, 0)
+    console.log({ shaderProgram })
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.rectVertexPositionBuffer)
     gl.vertexAttribPointer(
@@ -490,29 +611,30 @@ export class CanvasRenderingContext2DImplemention
       0
     )
 
-    transform.pushMatrix()
+    transformer.pushMatrix()
 
-    transform.translate(x, y)
-    transform.scale(width, height)
+    transformer.translate(x, y)
+    transformer.scale(width, height)
 
     this.sendTransformStack(shaderProgram)
+    const fillStyle = this.internalState.fillStrokeStyles.fillStyle
 
     gl.uniform4f(
       shaderProgram.uColor,
-      this.drawState.fillStyle[0],
-      this.drawState.fillStyle[1],
-      this.drawState.fillStyle[2],
-      this.drawState.fillStyle[3]
+      fillStyle[0],
+      fillStyle[1],
+      fillStyle[2],
+      fillStyle[3]
     )
 
     gl.drawArrays(gl.TRIANGLE_FAN, 0, 4)
 
-    transform.popMatrix()
+    transformer.popMatrix()
   }
 
   strokeRect = (x: number, y: number, width: number, height: number): void => {
-    let transform = this.transform
-    let shaderProgram = this.initShaders(transform.c_stack + 2, 0)
+    const transform = this.transformer
+    const shaderProgram = this.getShaderProgram(transform.cStack + 2, 0)
     const gl = this.gl
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.rectVertexPositionBuffer)
@@ -531,13 +653,14 @@ export class CanvasRenderingContext2DImplemention
     transform.scale(width, height)
 
     this.sendTransformStack(shaderProgram)
+    const strokeStyle = this.internalState.fillStrokeStyles.strokeStyle
 
     gl.uniform4f(
       shaderProgram.uColor,
-      this.drawState.strokeStyle[0],
-      this.drawState.strokeStyle[1],
-      this.drawState.strokeStyle[2],
-      this.drawState.strokeStyle[3]
+      strokeStyle[0],
+      strokeStyle[1],
+      strokeStyle[2],
+      strokeStyle[3]
     )
 
     gl.drawArrays(gl.LINE_LOOP, 0, 4)
@@ -545,20 +668,22 @@ export class CanvasRenderingContext2DImplemention
     transform.popMatrix()
   }
 
-  clearRect = (x: number, y: number, width: number, height: number): void => {}
+  clearRect = (x: number, y: number, width: number, height: number): void => {
+    console.warn('clearRect not implemented')
+  }
 
   // Mark last subpath as closed and create a new subpath with the same starting point as the previous subpath
   closePath = (): void => {
     const { subPaths } = this
     if (subPaths.length) {
       // Mark last subpath closed.
-      let prevPath = subPaths[subPaths.length - 1],
-        startX = prevPath.verts[0],
-        startY = prevPath.verts[1]
+      const prevPath = subPaths[subPaths.length - 1]
+      const startX = prevPath.verts[0]
+      const startY = prevPath.verts[1]
       prevPath.closed = true
 
       // Create new subpath using the starting position of previous subpath
-      let newPath = new SubPath(startX, startY)
+      const newPath = new SubPath(startX, startY)
       subPaths.push(newPath)
     }
   }
@@ -573,7 +698,7 @@ export class CanvasRenderingContext2DImplemention
       this.subPaths[this.subPaths.length - 1].verts.push(x, y, 0, 0)
     } else {
       // Create a new subpath if none currently exist
-      this.gl.moveTo(x, y)
+      this.moveTo(x, y)
     }
   }
 
@@ -604,11 +729,11 @@ export class CanvasRenderingContext2DImplemention
 
   // Adds a closed rect subpath and creates a new subpath
   rect(x: number, y: number, w: number, h: number): void {
-    this.gl.moveTo(x, y)
-    this.gl.lineTo(x + w, y)
-    this.gl.lineTo(x + w, y + h)
-    this.gl.lineTo(x, y + h)
-    this.gl.closePath()
+    this.moveTo(x, y)
+    this.lineTo(x + w, y)
+    this.lineTo(x + w, y + h)
+    this.lineTo(x, y + h)
+    this.closePath()
   }
 
   arc = (

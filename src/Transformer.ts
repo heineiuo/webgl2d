@@ -32,7 +32,7 @@ const mat3 = {
     m2[8] = m22 * m16 + m25 * m17 + m28 * m18
   },
 
-  vec2_multiply(m1: number[], m2: number[]): number[] {
+  vec2Multiply(m1: number[], m2: number[]): number[] {
     const mOut = []
     mOut[0] = m2[0] * m1[0] + m2[3] * m1[1] + m2[6]
     mOut[1] = m2[1] * m1[0] + m2[4] * m1[1] + m2[7]
@@ -46,107 +46,107 @@ const mat3 = {
 
 const STACK_DEPTH_LIMIT = 16
 
-export class Transform {
+export class Transformer {
   static getIdentity(): number[] {
     return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
   }
 
-  constructor(mat) {
+  constructor(mat: number[]) {
     this.clearStack(mat)
   }
 
-  m_stack: number[][]
-  m_cache: number[]
-  c_stack: number
+  matStack: number[][]
+  matCache: number[][]
+  cStack: number
   valid: number
-  result: void
+  result: number[]
 
-  clearStack(init_mat: any): void {
-    this.m_stack = []
-    this.m_cache = []
-    this.c_stack = 0
+  clearStack(initMat: number[]): void {
+    this.matStack = []
+    this.matCache = []
+    this.cStack = 0
     this.valid = 0
     this.result = null
 
     for (let i = 0; i < STACK_DEPTH_LIMIT; i++) {
-      this.m_stack[i] = Transform.getIdentity()
+      this.matStack[i] = Transformer.getIdentity()
     }
 
-    if (init_mat !== undefined) {
-      this.m_stack[0] = init_mat
+    if (initMat !== undefined) {
+      this.matStack[0] = initMat
     } else {
       this.setIdentity()
     }
   } //clearStack
 
-  setIdentity() {
-    this.m_stack[this.c_stack] = Transform.getIdentity()
-    if (this.valid === this.c_stack && this.c_stack) {
+  setIdentity(): void {
+    this.matStack[this.cStack] = Transformer.getIdentity()
+    if (this.valid === this.cStack && this.cStack) {
       this.valid--
     }
   }
 
-  getResult() {
-    if (!this.c_stack) {
-      return this.m_stack[0]
+  getResult(): number[] {
+    if (!this.cStack) {
+      return this.matStack[0]
     }
 
-    var m = mat3.identity.slice()
+    const m = mat3.identity.slice()
 
-    if (this.valid > this.c_stack - 1) {
-      this.valid = this.c_stack - 1
+    if (this.valid > this.cStack - 1) {
+      this.valid = this.cStack - 1
     }
 
-    for (var i = this.valid; i < this.c_stack + 1; i++) {
-      m = mat3.multiply(this.m_stack[i], m)
-      this.m_cache[i] = m
+    for (let i = this.valid; i < this.cStack + 1; i++) {
+      mat3.multiply(this.matStack[i], m)
+      this.matCache[i] = m
     }
 
-    this.valid = this.c_stack - 1
+    this.valid = this.cStack - 1
 
-    this.result = this.m_cache[this.c_stack]
+    this.result = this.matCache[this.cStack]
 
     return this.result
   }
 
-  pushMatrix() {
-    this.c_stack++
-    this.m_stack[this.c_stack] = Transform.getIdentity()
+  pushMatrix(): void {
+    this.cStack++
+    this.matStack[this.cStack] = Transformer.getIdentity()
   }
 
-  popMatrix() {
-    if (this.c_stack === 0) {
+  popMatrix(): void {
+    if (this.cStack === 0) {
       return
     }
-    this.c_stack--
+    this.cStack--
   }
 
-  translateMatrix = Transform.getIdentity()
+  translateMatrix = Transformer.getIdentity()
 
-  translate(x, y) {
+  translate(x: number, y: number): void {
     this.translateMatrix[6] = x
     this.translateMatrix[7] = y
 
-    mat3.multiply(this.translateMatrix, this.m_stack[this.c_stack])
+    mat3.multiply(this.translateMatrix, this.matStack[this.cStack])
 
     /*
-      if (this.valid === this.c_stack && this.c_stack) {
+      if (this.valid === this.cStack && this.cStack) {
         this.valid--;
       }
       */
   }
 
-  scaleMatrix = Transform.getIdentity()
-  rotateMatrix = Transform.getIdentity()
+  scaleMatrix = Transformer.getIdentity()
+  rotateMatrix = Transformer.getIdentity()
 
-  scale(x, y) {
+  scale(x: number, y: number): void {
     this.scaleMatrix[0] = x
     this.scaleMatrix[4] = y
 
-    mat3.multiply(this.scaleMatrix, this.m_stack[this.c_stack])
+    mat3.multiply(this.scaleMatrix, this.matStack[this.cStack])
 
     /*
-      if (this.valid === this.c_stack && this.c_stack) {
+      if (this.valid === this.cStack && this.cStack) {
         this.valid--;
       }
       */
@@ -161,10 +161,10 @@ export class Transform {
     this.rotateMatrix[1] = -sAng
     this.rotateMatrix[4] = cAng
 
-    mat3.multiply(this.rotateMatrix, this.m_stack[this.c_stack])
+    mat3.multiply(this.rotateMatrix, this.matStack[this.cStack])
 
     /*
-      if (this.valid === this.c_stack && this.c_stack) {
+      if (this.valid === this.cStack && this.cStack) {
         this.valid--;
       }
       */
