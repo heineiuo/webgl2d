@@ -14,8 +14,8 @@
     "react-router-dom": "^5.2.0"
   },
   "scripts": {
-    "demo": "node-ts-scripts run src/demo/index.tsx --platform=browser",
-    "build-demo": "node-ts-scripts bundle src/demo/index.tsx --platform=browser --html --baseURL=https://heineiuo.github.io/webgl2d",
+    "demo": "node-ts-scripts run demo/index.tsx --platform=browser",
+    "build-demo": "node-ts-scripts bundle demo/index.tsx --platform=browser --html --baseURL=https://heineiuo.github.io/webgl2d",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
