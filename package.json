@@ -8,14 +8,14 @@
     "@types/react": "^16.9.36",
     "@types/react-dom": "^16.9.8",
     "@types/react-router-dom": "^5.1.5",
-    "node-ts-scripts": "^0.12.4",
+    "node-ts-scripts": "^0.12.5",
     "react": "^16.13.1",
     "react-dom": "^16.13.1",
     "react-router-dom": "^5.2.0"
   },
   "scripts": {
     "demo": "node-ts-scripts run src/demo/index.tsx --platform=browser",
-    "build-demo": "node-ts-scripts bundle src/demo/index.tsx --platform=browser --html",
+    "build-demo": "node-ts-scripts bundle src/demo/index.tsx --platform=browser --html --baseURL=https://heineiuo.github.io/webgl2d",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

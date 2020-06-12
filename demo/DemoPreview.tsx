@@ -1,5 +1,5 @@
 import React from 'react'
-import { webgl2d } from '../'
+import { webgl2d } from '../src'
 
 export function DemoPreview(props: {
   onContextCreated: (ctx: CanvasRenderingContext2D) => void

@@ -1,0 +1,90 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      !startsWith(github.event.pull_request.head.label, 'heineiuo:')
+
+    strategy:
+      matrix:
+        node-version: [14.x]
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Cache
+        id: cache-node-modules
+        uses: actions/cache@v2
+        with:
+          path: |
+            **/node_modules
+          key: ${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install Dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: |
+          npm install
+        env:
+          CI: true
+
+      - name: Before deploy to gh-pages
+        run: |
+          npm run build-demo
+          npx node-ts-scripts bundle scripts/before-gh-pages.ts --platform=node
+          node build/before-gh-pages.js
+          rm -rf build/before-gh-pages.js
+          copy ./public/* ./build
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+      
+      - name: Clean gh-pages
+        run: |
+          rm -rf ./build
+
+      - name: Build
+        run: |
+          npx node-ts-scripts bundle src/index.ts --platform=node
+          npm run build
+        env:
+          CI: true
+
+      - name: Create Changelogs
+        if: |
+          github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        id: changelog
+        uses: heineiuo/create-changelogs@master
+
+      - name: Publish to NPM
+        if: |
+          github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo '//registry.npmjs.org/:_authToken=${{secrets.NPM_TOKEN}}' > ~/.npmrc
+          npm publish
+
+      - name: Create Release
+        if: |
+          github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        id: create_release
+        uses: actions/create-release@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          body: ${{ steps.changelog.outputs.changelogs }}
+          draft: false
+          prerelease:
+            ${{ steps.changelog.outputs.release_type == 'prerelease' }}
