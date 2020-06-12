@@ -189,8 +189,8 @@ function HSLAToRGBA(
 }
 
 export function colorStringToVec4(value: string): Vector4 | false {
-  let result = []
   let match = reRGBAColor.exec(value)
+  let result: Vector4 = [0, 0, 0, 0]
 
   if (match) {
     const hasAlpha = match[1]
@@ -277,6 +277,10 @@ export function colorStringToVec4(value: string): Vector4 | false {
   return false
 }
 
+export function isPOT(value: number): boolean {
+  return value > 0 && ((value - 1) & value) === 0
+}
+
 export function colorVecToString(vec4: Vector4): string {
   return (
     'rgba(' +
@@ -286,16 +290,17 @@ export function colorVecToString(vec4: Vector4): string {
     ', ' +
     vec4[2] * 255 +
     ', ' +
-    parseFloat(vec4[3]) +
+    parseFloat(String(vec4[3])) +
     ')'
   )
 }
 
-const shaderMask = {
+export const shaderMask = {
   texture: 1,
   crop: 2,
   path: 4,
 }
+
 export function getFragmentShaderSource(sMask: number): string {
   const fsSource = [
     '#ifdef GL_ES',
@@ -389,4 +394,71 @@ export class SubPath {
 
   closed: boolean
   verts: [number, number, number, number]
+}
+
+// -------------------------------------------------
+
+/**
+ * Creates a program, attaches shaders, binds attrib locations, links the
+ * program and calls useProgram.
+ */
+export function createProgram(
+  gl: WebGLRenderingContext,
+  shaders: WebGLShader[],
+  optAttribs?: string[],
+  optLocations?: number[]
+): WebGLProgram {
+  const program = gl.createProgram()
+  shaders.forEach((shader: WebGLShader) => {
+    gl.attachShader(program, shader)
+  })
+  if (optAttribs) {
+    optAttribs.forEach((attrib: string, ndx: number) => {
+      gl.bindAttribLocation(
+        program,
+        optLocations ? optLocations[ndx] : ndx,
+        attrib
+      )
+    })
+  }
+  gl.linkProgram(program)
+
+  // Check the link status
+  const linked = gl.getProgramParameter(program, gl.LINK_STATUS)
+  if (!linked) {
+    // something went wrong with the link
+    const lastError = gl.getProgramInfoLog(program)
+    console.error('Error in program linking:' + lastError)
+
+    gl.deleteProgram(program)
+    return null
+  }
+  return program
+}
+
+export function loadShader(
+  gl: WebGLRenderingContext,
+  shaderSource: string,
+  shaderType: number // gl.VERTEX_SHADER | gl.FRAGMENT_SHADER
+): WebGLShader {
+  // Create the shader object
+  const shader = gl.createShader(shaderType)
+
+  // Load the shader source
+  gl.shaderSource(shader, shaderSource)
+
+  // Compile the shader
+  gl.compileShader(shader)
+
+  // Check the compile status
+  const compiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+  if (!compiled) {
+    // Something went wrong during compilation; get the error
+    const lastError = gl.getShaderInfoLog(shader)
+    console.error("*** Error compiling shader '" + shader + "':" + lastError)
+    gl.deleteShader(shader)
+    return null
+  }
+
+  return shader
 }

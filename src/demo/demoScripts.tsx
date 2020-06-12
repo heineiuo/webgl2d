@@ -75,4 +75,17 @@ export const demoScripts = {
     ctx.fillStyle = 'gray'
     ctx.fillRect(0, 0, 80, 80)
   },
+
+  drawImage: (ctx: CanvasRenderingContext2D): void => {
+    const image = new Image()
+    image.onload = (): void => {
+      ctx.drawImage(image, 33, 71, 104, 124, 21, 20, 87, 104)
+    }
+    image.src = '/rhino.jpg'
+  },
+
+  fillText: (ctx: CanvasRenderingContext2D): void => {
+    ctx.font = '48px serif'
+    ctx.fillText('Hello world', 10, 50)
+  },
 }

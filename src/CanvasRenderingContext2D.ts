@@ -1,6 +1,10 @@
 import { InternalState } from './InternalState'
 import { Transformer } from './Transformer'
 import {
+  createProgram,
+  loadShader,
+  isPOT,
+  shaderMask,
   Vector4,
   getFragmentShaderSource,
   getVertexShaderSource,
@@ -25,11 +29,11 @@ export class CanvasRenderingContext2DImplemention
     gl.clear(gl.COLOR_BUFFER_BIT) // | gl.DEPTH_BUFFER_BIT);
 
     // Disables writing to dest-alpha
-    gl.colorMask(true, true, true, false)
+    // gl.colorMask(true, true, true, false)
 
     // Depth options
-    //gl.enable(gl.DEPTH_TEST);
-    //gl.depthFunc(gl.LEQUAL);
+    // gl.enable(gl.DEPTH_TEST)
+    // gl.depthFunc(gl.LEQUAL)
 
     // Blending options
     gl.enable(gl.BLEND)
@@ -50,7 +54,7 @@ export class CanvasRenderingContext2DImplemention
   private shaderProgram!: WebGLProgram
   private imageCache = []
   private textureCache = []
-  private maxTextureSize: any
+  private maxTextureSize: number
   private fillStyleToVector4 = (
     color: string | CanvasGradient | CanvasPattern
   ): Vector4 => {
@@ -193,7 +197,7 @@ export class CanvasRenderingContext2DImplemention
       this.internalState.fillStrokeStyles.fillStyle
     )
 
-    console.log({ fillStyle })
+    // console.log({ fillStyle })
     this.gl.uniform4f(
       shaderProgram.uColor,
       fillStyle[0],
@@ -250,6 +254,222 @@ export class CanvasRenderingContext2DImplemention
     }
 
     transformer.popMatrix()
+  }
+
+  private drawImage2d = (
+    image: CanvasImageSource,
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    e: number,
+    f: number,
+    g: number,
+    h: number
+  ): void => {
+    const gl = this.gl
+    const transform = this.transformer
+    const args = [image, a, b, c, d, e, f, g, h].filter(
+      item => typeof item !== 'undefined'
+    )
+
+    transform.pushMatrix()
+
+    let sMask = shaderMask.texture
+    let doCrop = false
+
+    //drawImage(image, dx, dy)
+    if (args.length === 3) {
+      transform.translate(a, b)
+      transform.scale(image.width, image.height)
+    }
+
+    //drawImage(image, dx, dy, dw, dh)
+    else if (args.length === 5) {
+      transform.translate(a, b)
+      transform.scale(c, d)
+    }
+
+    //drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)
+    else if (args.length === 9) {
+      transform.translate(e, f)
+      transform.scale(g, h)
+      sMask = sMask | shaderMask.crop
+      doCrop = true
+    }
+
+    const shaderProgram = this.getShaderProgram(transform.cStack, sMask)
+    // console.log({ shaderProgram })
+
+    const cacheIndex = this.imageCache.indexOf(image)
+
+    let texture = cacheIndex !== -1 ? this.textureCache[cacheIndex] : null
+    if (!texture) {
+      texture = {
+        obj: gl.createTexture(),
+        index: this.textureCache.push(this),
+      }
+
+      this.imageCache.push(image)
+
+      gl.bindTexture(gl.TEXTURE_2D, texture.obj)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+      // Enable Mip mapping on power-of-2 textures
+      if (isPOT(image.width) && isPOT(image.height)) {
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MIN_FILTER,
+          gl.LINEAR_MIPMAP_LINEAR
+        )
+        gl.generateMipmap(gl.TEXTURE_2D)
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      }
+
+      // Unbind texture
+      gl.bindTexture(gl.TEXTURE_2D, null)
+    }
+
+    if (doCrop) {
+      gl.uniform4f(
+        shaderProgram.uCropSource,
+        a / image.width,
+        b / image.height,
+        c / image.width,
+        d / image.height
+      )
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.rectVertexPositionBuffer)
+    gl.vertexAttribPointer(
+      shaderProgram.vertexPositionAttribute,
+      4,
+      gl.FLOAT,
+      false,
+      0,
+      0
+    )
+
+    gl.bindTexture(gl.TEXTURE_2D, texture.obj)
+    gl.activeTexture(gl.TEXTURE0)
+
+    gl.uniform1i(shaderProgram.uSampler, 0)
+
+    this.sendTransformStack(shaderProgram)
+    gl.drawArrays(gl.TRIANGLE_FAN, 0, 4)
+
+    transform.popMatrix()
+  }
+
+  drawImage3d = (image: ImageData): void => {
+    const gl = this.gl
+    const fragmentShader = `precision mediump float;
+
+    // our texture
+    uniform sampler2D u_image;
+    
+    // the texCoords passed in from the vertex shader.
+    varying vec2 v_texCoord;
+    
+    void main() {
+       gl_FragColor = texture2D(u_image, v_texCoord);
+    }`
+
+    const vertexShader = `attribute vec2 a_position;
+
+    uniform mat3 u_matrix;
+    
+    varying vec2 v_texCoord;
+    
+    void main() {
+       gl_Position = vec4(u_matrix * vec3(a_position, 1), 1);
+    
+       // because we're using a unit quad we can just use
+       // the same data for our texcoords.
+       v_texCoord = a_position;  
+    }`
+
+    const shaders = [
+      loadShader(gl, fragmentShader, gl.FRAGMENT_SHADER),
+      loadShader(gl, vertexShader, gl.VERTEX_SHADER),
+    ]
+    const program = createProgram(gl, shaders)
+    gl.useProgram(program)
+
+    // look up where the vertex data needs to go.
+    const positionLocation = gl.getAttribLocation(program, 'a_position')
+
+    // look up uniform locations
+    // const uImageLoc = gl.getUniformLocation(program, 'u_image')
+    const uMatrixLoc = gl.getUniformLocation(program, 'u_matrix')
+
+    // provide texture coordinates for the rectangle.
+    const positionBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+      ]),
+      gl.STATIC_DRAW
+    )
+    gl.enableVertexAttribArray(positionLocation)
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
+
+    const texture = gl.createTexture()
+    gl.bindTexture(gl.TEXTURE_2D, texture)
+
+    // Set the parameters so we can render any size image.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+
+    // Upload the image into the texture.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
+
+    const dstX = 20
+    const dstY = 30
+    const dstWidth = 64
+    const dstHeight = 64
+
+    // convert dst pixel coords to clipspace coords
+    const clipX = (dstX / gl.canvas.width) * 2 - 1
+    const clipY = (dstY / gl.canvas.height) * -2 + 1
+    const clipWidth = (dstWidth / gl.canvas.width) * 2
+    const clipHeight = (dstHeight / gl.canvas.height) * -2
+
+    // build a matrix that will stretch our
+    // unit quad to our desired size and location
+    gl.uniformMatrix3fv(uMatrixLoc, false, [
+      clipWidth,
+      0,
+      0,
+      0,
+      clipHeight,
+      0,
+      clipX,
+      clipY,
+      1,
+    ])
+
+    // Draw the rectangle.
+    gl.drawArrays(gl.TRIANGLES, 0, 6)
   }
 
   // ------------------ END OF PRIVATE METHODS --------------------------------------
@@ -459,7 +679,8 @@ export class CanvasRenderingContext2DImplemention
     dw?: number,
     dh?: number
   ): void => {
-    console.warn('drawImage not implemented')
+    // console.warn('drawImage not implemented')
+    this.drawImage2d(image, sx, sy, sw, sh, dx, dy, dw, dh)
   }
 
   // Empty the list of subpaths so that the context once again has zero subpaths
@@ -687,7 +908,7 @@ export class CanvasRenderingContext2DImplemention
       this.internalState.fillStrokeStyles.fillStyle
     )
 
-    console.log({ fillStyle })
+    // console.log({ fillStyle })
 
     gl.uniform4f(
       shaderProgram.uColor,

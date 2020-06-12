@@ -11,6 +11,7 @@ export function DemoPreview(props: {
     if (canvasRef.current) {
       const canvas = canvasRef.current
       canvas.width = 800
+      canvas.style.border = '1px solid #eee'
       canvas.height = 600
       const webgl = canvas.getContext('webgl')
       const ctx = webgl2d(webgl)
@@ -22,6 +23,7 @@ export function DemoPreview(props: {
   React.useEffect(() => {
     if (canvasNormalRef.current) {
       const canvas = canvasNormalRef.current
+      canvas.style.border = '1px solid #eee'
       canvas.width = 800
       canvas.height = 600
       const ctx = canvas.getContext('2d')

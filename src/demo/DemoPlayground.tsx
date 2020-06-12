@@ -41,7 +41,11 @@ export function DemoPlayground(): JSX.Element {
         {/* sidebar */}
         <div style={sidebarStyle}>
           <div style={sidebarHeadStyle}>
-            <div style={{ fontSize: 20 }}>webgl2d</div>
+            <div style={{ fontSize: 20 }}>
+              <Link to="/" style={{ color: '#000', textDecoration: 'none' }}>
+                webgl2d
+              </Link>
+            </div>
             <div style={{ fontSize: 14 }}>
               Create CanvasRenderingContext2D from WebGLRenderingContext
             </div>
