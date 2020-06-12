@@ -42,7 +42,7 @@ jobs:
           npx node-ts-scripts bundle scripts/before-gh-pages.ts --platform=node
           node build/before-gh-pages.js
           rm -rf build/before-gh-pages.js
-          copy ./public/* ./build
+          cp ./public/* ./build
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
